@@ -205,6 +205,19 @@ def fetch_ticker(
                 tcm_id=None,
                 error="Ticker not found on Zerodha Markets",
             )
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "").strip()
+            detail = "429 Too Many Requests"
+            if retry_after:
+                detail = f"{detail}; retry_after={retry_after}"
+            return TickerSnapshot(
+                ticker=ticker,
+                exchange=exchange,
+                company_name=ticker,
+                url=url,
+                tcm_id=None,
+                error=detail,
+            )
         response.raise_for_status()
         return parse_zerodha_page(response.text, exchange=exchange, ticker=ticker, url=url)
     except httpx.HTTPError as exc:
