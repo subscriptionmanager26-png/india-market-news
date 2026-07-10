@@ -9,6 +9,7 @@ import httpx
 from dateutil import parser as date_parser
 
 from india_market_news.dedup import corporate_action_hash, news_content_hash
+from india_market_news.html_markdown import html_to_markdown
 from india_market_news.models import CorporateActionItem, NewsItem, TickerSnapshot
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def parse_zerodha_page(html: str, *, exchange: str, ticker: str, url: str) -> Ti
 
 
 def _extract_news_summary(block: str) -> str:
-    """Pull Reuters summary from Zerodha's collapsible news_detail block."""
+    """Pull Reuters summary as Markdown from Zerodha's news_detail block."""
     detail = re.search(
         r'<div class="news_detail"[^>]*>(.*)',
         block,
@@ -107,7 +108,7 @@ def _extract_news_summary(block: str) -> str:
         match = re.search(pattern, chunk, flags=re.DOTALL | re.IGNORECASE)
         if not match:
             continue
-        text = _strip_html(match.group(1))
+        text = html_to_markdown(match.group(1))
         if len(text) > len(best):
             best = text
     return best

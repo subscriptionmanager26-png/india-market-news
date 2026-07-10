@@ -52,6 +52,8 @@ Your UI (read via Supabase client)
 News: `SHA256(ticker + normalized_title + published_at)`  
 Corporate actions: `SHA256(ticker + event_type + event_date)`
 
+`summary` is stored as **Markdown** (bullets, paragraphs, bold) for UI rendering.
+
 Duplicates are ignored on upsert via unique `content_hash` constraints.
 
 ## Fetch strategy
@@ -126,12 +128,14 @@ const supabase = createClient(
   'YOUR_ANON_KEY'
 )
 
-// Latest news for a ticker
+// Latest news for a ticker (summary is Markdown)
 const { data } = await supabase
   .from('mn_latest_news')
   .select('*')
-  .eq('ticker', 'HDFCBANK')
+  .eq('ticker', 'RELIANCE')
   .limit(20)
+
+// Render with react-markdown, marked, or similar
 ```
 
 ## License
