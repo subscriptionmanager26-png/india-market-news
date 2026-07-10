@@ -82,6 +82,7 @@ def run_pipeline(
             micro_batch_size=micro_batch_size,
             micro_batch_pause=micro_batch_pause,
         )
+        logger.info("Fetch settings: %s", fetcher.describe())
         failed_tickers: list[str] = []
 
         batches = [

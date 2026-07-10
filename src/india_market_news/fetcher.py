@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 _RETRY_AFTER_RE = re.compile(r"retry_after=(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 
+class InFlightLimiter:
+    """Hard cap on concurrent Zerodha HTTP requests."""
+
+    def __init__(self, max_in_flight: int):
+        self._semaphore = threading.Semaphore(max(1, max_in_flight))
+
+    def acquire(self) -> None:
+        self._semaphore.acquire()
+
+    def release(self) -> None:
+        self._semaphore.release()
+
+
 class RateLimiter:
     """Global throttle shared across worker threads."""
 
@@ -58,6 +71,14 @@ class NewsFetcher:
         self.micro_batch_size = max(0, micro_batch_size)
         self.micro_batch_pause = micro_batch_pause
         self.rate_limiter = RateLimiter(min_interval=request_delay)
+        in_flight_cap = micro_batch_size if micro_batch_size > 0 else max_workers
+        self.in_flight = InFlightLimiter(in_flight_cap)
+
+    def describe(self) -> str:
+        return (
+            f"workers={self.max_workers} micro_batch_size={self.micro_batch_size} "
+            f"micro_batch_pause={self.micro_batch_pause}s request_delay={self.request_delay}s"
+        )
 
     def fetch_tickers(
         self,
@@ -170,15 +191,19 @@ class NewsFetcher:
         for attempt in range(self.retry_count + 1):
             if self.request_delay > 0:
                 self.rate_limiter.wait()
-            if client is None:
-                with httpx.Client(
-                    headers={"User-Agent": USER_AGENT},
-                    timeout=25.0,
-                    follow_redirects=True,
-                ) as owned:
-                    snapshot = fetch_ticker(ticker, exchange=exchange, client=owned)
-            else:
-                snapshot = fetch_ticker(ticker, exchange=exchange, client=client)
+            self.in_flight.acquire()
+            try:
+                if client is None:
+                    with httpx.Client(
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=25.0,
+                        follow_redirects=True,
+                    ) as owned:
+                        snapshot = fetch_ticker(ticker, exchange=exchange, client=owned)
+                else:
+                    snapshot = fetch_ticker(ticker, exchange=exchange, client=client)
+            finally:
+                self.in_flight.release()
 
             if not snapshot.error or "429" not in snapshot.error:
                 return snapshot
