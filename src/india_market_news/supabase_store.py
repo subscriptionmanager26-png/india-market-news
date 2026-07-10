@@ -12,6 +12,33 @@ from india_market_news.models import CorporateActionItem, NewsItem, TickerSnapsh
 logger = logging.getLogger(__name__)
 
 RETENTION_DAYS = 90
+UPSERT_CHUNK_SIZE = 200
+
+
+def _dedupe_news_items(items: list[NewsItem]) -> list[NewsItem]:
+    """Keep one row per content_hash; prefer the longest summary."""
+    by_hash: dict[str, NewsItem] = {}
+    for item in items:
+        existing = by_hash.get(item.content_hash)
+        if existing is None or len(item.summary) > len(existing.summary):
+            by_hash[item.content_hash] = item
+    return list(by_hash.values())
+
+
+def _dedupe_rows(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    """Keep one row per unique key within a single upsert batch."""
+    seen: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        row_key = row[key]
+        existing = seen.get(row_key)
+        if existing is None:
+            seen[row_key] = row
+            continue
+        if key == "content_hash" and len(row.get("summary", "")) > len(
+            existing.get("summary", "")
+        ):
+            seen[row_key] = row
+    return list(seen.values())
 
 # Tables live in public schema (mn_ prefix) for reliable PostgREST access.
 TABLE_TICKERS = "mn_tickers"
@@ -59,7 +86,9 @@ class SupabaseStore:
         if not items:
             return 0, 0
 
-        rows = [
+        items = _dedupe_news_items(items)
+        rows = _dedupe_rows(
+            [
             {
                 "content_hash": item.content_hash,
                 "ticker": item.ticker,
@@ -71,14 +100,18 @@ class SupabaseStore:
                 "last_seen_at": datetime.now(timezone.utc).isoformat(),
             }
             for item in items
-        ]
+            ],
+            key="content_hash",
+        )
 
         before = self._count_hashes(TABLE_NEWS, [row["content_hash"] for row in rows])
-        self.client.table(TABLE_NEWS).upsert(
-            rows,
-            on_conflict="content_hash",
-            ignore_duplicates=False,
-        ).execute()
+        for offset in range(0, len(rows), UPSERT_CHUNK_SIZE):
+            chunk = rows[offset : offset + UPSERT_CHUNK_SIZE]
+            self.client.table(TABLE_NEWS).upsert(
+                chunk,
+                on_conflict="content_hash",
+                ignore_duplicates=False,
+            ).execute()
         inserted = max(len(rows) - before, 0)
         updated = len(rows) - inserted
         return inserted, updated
@@ -89,7 +122,8 @@ class SupabaseStore:
         if not items:
             return 0, 0
 
-        rows = [
+        rows = _dedupe_rows(
+            [
             {
                 "content_hash": item.content_hash,
                 "ticker": item.ticker,
@@ -98,14 +132,18 @@ class SupabaseStore:
                 "details": item.details,
             }
             for item in items
-        ]
+            ],
+            key="content_hash",
+        )
 
         before = self._count_hashes(TABLE_CORP, [row["content_hash"] for row in rows])
-        self.client.table(TABLE_CORP).upsert(
-            rows,
-            on_conflict="content_hash",
-            ignore_duplicates=True,
-        ).execute()
+        for offset in range(0, len(rows), UPSERT_CHUNK_SIZE):
+            chunk = rows[offset : offset + UPSERT_CHUNK_SIZE]
+            self.client.table(TABLE_CORP).upsert(
+                chunk,
+                on_conflict="content_hash",
+                ignore_duplicates=True,
+            ).execute()
         inserted = max(len(rows) - before, 0)
         return inserted, len(rows) - inserted
 
