@@ -51,6 +51,8 @@ def run_pipeline(
     batch_size: int = 100,
     batch_pause_seconds: float = 20.0,
     request_delay: float = 0.25,
+    micro_batch_size: int = 0,
+    micro_batch_pause: float = 2.0,
     series: str | None = "EQ",
 ) -> dict:
     ticker_rows = load_tickers_from_csv(ticker_csv, series=series)
@@ -74,7 +76,12 @@ def run_pipeline(
 
     try:
         store.sync_tickers(ticker_rows)
-        fetcher = NewsFetcher(max_workers=max_workers, request_delay=request_delay)
+        fetcher = NewsFetcher(
+            max_workers=max_workers,
+            request_delay=request_delay,
+            micro_batch_size=micro_batch_size,
+            micro_batch_pause=micro_batch_pause,
+        )
         failed_tickers: list[str] = []
 
         batches = [

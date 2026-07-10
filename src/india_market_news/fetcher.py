@@ -49,9 +49,14 @@ class NewsFetcher:
         max_workers: int = 8,
         retry_count: int = 4,
         request_delay: float = 0.25,
+        micro_batch_size: int = 0,
+        micro_batch_pause: float = 2.0,
     ):
         self.max_workers = max(1, max_workers)
         self.retry_count = retry_count
+        self.request_delay = request_delay
+        self.micro_batch_size = max(0, micro_batch_size)
+        self.micro_batch_pause = micro_batch_pause
         self.rate_limiter = RateLimiter(min_interval=request_delay)
 
     def fetch_tickers(
@@ -64,11 +69,50 @@ class NewsFetcher:
         if not tickers:
             return []
 
+        if self.micro_batch_size > 0:
+            return self._fetch_micro_batches(tickers, exchange=exchange)
+
         if self.max_workers == 1:
             return self._fetch_sequential(tickers, exchange=exchange)
 
+        return self._fetch_parallel(tickers, exchange=exchange)
+
+    def _fetch_micro_batches(
+        self,
+        tickers: list[str],
+        *,
+        exchange: str,
+    ) -> list[TickerSnapshot]:
         snapshots: list[TickerSnapshot] = []
-        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+        chunks = [
+            tickers[offset : offset + self.micro_batch_size]
+            for offset in range(0, len(tickers), self.micro_batch_size)
+        ]
+        for index, chunk in enumerate(chunks):
+            logger.info(
+                "Micro-batch %d/%d: fetching %d tickers",
+                index + 1,
+                len(chunks),
+                len(chunk),
+            )
+            snapshots.extend(self._fetch_parallel(chunk, exchange=exchange))
+            if index + 1 < len(chunks) and self.micro_batch_pause > 0:
+                logger.info(
+                    "Pausing %.1fs before next micro-batch",
+                    self.micro_batch_pause,
+                )
+                time.sleep(self.micro_batch_pause)
+        return snapshots
+
+    def _fetch_parallel(
+        self,
+        tickers: list[str],
+        *,
+        exchange: str,
+    ) -> list[TickerSnapshot]:
+        workers = min(self.max_workers, len(tickers))
+        snapshots: list[TickerSnapshot] = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(self._fetch_with_retry, ticker, exchange, None): ticker
                 for ticker in tickers
@@ -124,7 +168,8 @@ class NewsFetcher:
     ) -> TickerSnapshot:
         last: TickerSnapshot | None = None
         for attempt in range(self.retry_count + 1):
-            self.rate_limiter.wait()
+            if self.request_delay > 0:
+                self.rate_limiter.wait()
             if client is None:
                 with httpx.Client(
                     headers={"User-Agent": USER_AGENT},

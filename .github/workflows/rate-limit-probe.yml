@@ -2,11 +2,16 @@ name: Probe Zerodha rate limits
 
 on:
   workflow_dispatch:
+    inputs:
+      count:
+        description: Number of tickers to probe
+        default: "500"
+        required: false
 
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +22,11 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Probe from GitHub Actions IP
+      - name: Probe 20-at-a-time with 2s pause (GitHub Actions IP)
         run: |
-          python scripts/benchmark_rate_limit.py --count 40
+          python scripts/probe_micro_batch.py \
+            --count ${{ inputs.count || 500 }} \
+            --workers 20 \
+            --micro-batch-size 20 \
+            --micro-batch-pause 2 \
+            --request-delay 0

@@ -51,7 +51,19 @@ def main(argv: list[str] | None = None) -> int:
         "--request-delay",
         type=float,
         default=0.25,
-        help="Minimum seconds between Zerodha requests (default: 0.25)",
+        help="Minimum seconds between Zerodha requests (default: 0.25, use 0 with micro-batches)",
+    )
+    parser.add_argument(
+        "--micro-batch-size",
+        type=int,
+        default=0,
+        help="Parallel tickers per micro-batch (default: 0 = disabled)",
+    )
+    parser.add_argument(
+        "--micro-batch-pause",
+        type=float,
+        default=2.0,
+        help="Seconds to pause between micro-batches (default: 2)",
     )
     parser.add_argument(
         "--dry-run",
@@ -91,11 +103,17 @@ def main(argv: list[str] | None = None) -> int:
         snapshots = NewsFetcher(
             max_workers=args.workers,
             request_delay=args.request_delay,
+            micro_batch_size=args.micro_batch_size,
+            micro_batch_pause=args.micro_batch_pause,
         ).fetch_tickers(tickers)
         news, corp = snapshots_to_items(snapshots)
+        rate_limited = sum(
+            1 for snapshot in snapshots if snapshot.error and "429" in snapshot.error
+        )
         payload = {
             "tickers": len(tickers),
             "ok": sum(1 for snapshot in snapshots if not snapshot.error),
+            "rate_limited": rate_limited,
             "news_seen": len(news),
             "corp_seen": len(corp),
         }
@@ -110,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         batch_pause_seconds=args.batch_pause,
         request_delay=args.request_delay,
+        micro_batch_size=args.micro_batch_size,
+        micro_batch_pause=args.micro_batch_pause,
         series=series,
     )
     print(json.dumps(stats, indent=2))
