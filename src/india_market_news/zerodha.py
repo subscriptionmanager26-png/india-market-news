@@ -90,6 +90,29 @@ def parse_zerodha_page(html: str, *, exchange: str, ticker: str, url: str) -> Ti
     )
 
 
+def _extract_news_summary(block: str) -> str:
+    """Pull Reuters summary from Zerodha's collapsible news_detail block."""
+    detail = re.search(
+        r'<div class="news_detail"[^>]*>(.*)',
+        block,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    chunk = detail.group(1) if detail else block
+    best = ""
+    for pattern in (
+        r'<div class="news_story">(.*?)</div>\s*</div>',
+        r'<div class="full_story">(.*?)</div>',
+        r'<div class="news_story">(.*?)</div>',
+    ):
+        match = re.search(pattern, chunk, flags=re.DOTALL | re.IGNORECASE)
+        if not match:
+            continue
+        text = _strip_html(match.group(1))
+        if len(text) > len(best):
+            best = text
+    return best
+
+
 def _parse_news(html: str, *, ticker: str, company_name: str) -> list[NewsItem]:
     section = _section(html, "news")
     if not section:
@@ -97,9 +120,9 @@ def _parse_news(html: str, *, ticker: str, company_name: str) -> list[NewsItem]:
 
     items: list[NewsItem] = []
     for block in re.findall(
-        r'<div class="news_wrapper">(.*?)</div>\s*</div>\s*</div>\s*</div>',
+        r'<div class="news_wrapper">(.*?)(?=<div class="news_wrapper">|$)',
         section,
-        flags=re.DOTALL,
+        flags=re.DOTALL | re.IGNORECASE,
     ):
         headline_match = re.search(
             r'<div class="news_headline">(.*?)</div>',
@@ -120,13 +143,7 @@ def _parse_news(html: str, *, ticker: str, company_name: str) -> list[NewsItem]:
         )
         published_raw = _strip_html(date_match.group(1)) if date_match else ""
         published_at = _parse_published_at(published_raw) if published_raw else None
-
-        summary_match = re.search(
-            r'<div class="news_story">(.*?)</div>',
-            block,
-            flags=re.DOTALL,
-        )
-        summary = _strip_html(summary_match.group(1)) if summary_match else ""
+        summary = _extract_news_summary(block)
 
         items.append(
             NewsItem(

@@ -68,6 +68,7 @@ class SupabaseStore:
                 "summary": item.summary,
                 "published_at": item.published_at.isoformat() if item.published_at else None,
                 "source": "zerodha",
+                "last_seen_at": datetime.now(timezone.utc).isoformat(),
             }
             for item in items
         ]
@@ -76,10 +77,11 @@ class SupabaseStore:
         self.client.table(TABLE_NEWS).upsert(
             rows,
             on_conflict="content_hash",
-            ignore_duplicates=True,
+            ignore_duplicates=False,
         ).execute()
         inserted = max(len(rows) - before, 0)
-        return inserted, len(rows) - inserted
+        updated = len(rows) - inserted
+        return inserted, updated
 
     def upsert_corporate_actions(
         self, items: list[CorporateActionItem]
