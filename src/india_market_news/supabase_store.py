@@ -124,14 +124,17 @@ class SupabaseStore:
 
         rows = _dedupe_rows(
             [
-            {
-                "content_hash": item.content_hash,
-                "ticker": item.ticker,
-                "event_type": item.event_type,
-                "event_date_raw": item.event_date,
-                "details": item.details,
-            }
-            for item in items
+                {
+                    "content_hash": item.content_hash,
+                    "ticker": item.ticker,
+                    "event_type": item.event_type,
+                    "event_date_raw": item.event_date,
+                    "details": item.details,
+                    "date_label": item.date_label,
+                    "document_url": item.document_url,
+                    "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                }
+                for item in items
             ],
             key="content_hash",
         )
@@ -142,7 +145,7 @@ class SupabaseStore:
             self.client.table(TABLE_CORP).upsert(
                 chunk,
                 on_conflict="content_hash",
-                ignore_duplicates=True,
+                ignore_duplicates=False,
             ).execute()
         inserted = max(len(rows) - before, 0)
         return inserted, len(rows) - inserted

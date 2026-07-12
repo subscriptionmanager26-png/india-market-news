@@ -21,6 +21,8 @@ class CorporateActionItem:
     event_date: str
     content_hash: str
     details: str = ""
+    date_label: str = ""
+    document_url: str = ""
 
 
 @dataclass

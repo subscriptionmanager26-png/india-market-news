@@ -45,7 +45,7 @@ Your UI (read via Supabase client)
 ### UI views
 
 - `mn_latest_news` — news from last 90 days, newest first
-- `mn_ticker_corporate_actions` — corporate actions by ticker
+- `mn_ticker_corporate_actions` — corporate actions by ticker (includes `details`, `date_label`, `document_url`)
 
 ### Deduplication
 

@@ -164,6 +164,34 @@ def _parse_news(html: str, *, ticker: str, company_name: str) -> list[NewsItem]:
     return items
 
 
+_DATE_LABELS = {
+    "ex date",
+    "announcement date",
+    "record date",
+    "board meeting date",
+    "meeting date",
+}
+
+
+def _parse_content_link(part: str) -> tuple[str, str]:
+    """Return (url, title) for Annual Report-style content links."""
+    match = re.search(
+        r"<a[^>]*class=['\"]?content-link['\"]?[^>]*href=(['\"]?)([^'\"\s>]+)\1[^>]*>(.*?)</a>",
+        part,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r"<a[^>]*class=['\"]?content-link['\"]?[^>]*href=([^\s>]+)[^>]*>(.*?)</a>",
+            part,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if not match:
+            return "", ""
+        return match.group(1).strip("\"'"), _strip_html(match.group(2))
+    return match.group(2).strip(), _strip_html(match.group(3))
+
+
 def _parse_corporate_actions(html: str, *, ticker: str) -> list[CorporateActionItem]:
     section = _section(html, "corporate_ations")
     if not section:
@@ -171,15 +199,59 @@ def _parse_corporate_actions(html: str, *, ticker: str) -> list[CorporateActionI
 
     actions: list[CorporateActionItem] = []
     seen: set[str] = set()
-    for match in re.finditer(
-        r'<div class="event_name">(.*?)</div>.*?<div class="timestamp">(.*?)</div>',
-        section,
-        flags=re.DOTALL,
-    ):
-        event_type = _strip_html(match.group(1))
-        event_date = _strip_html(match.group(2))
-        if not event_type or not event_date:
+    for part in re.split(r'<div class="event"[^>]*>', section)[1:]:
+        name_match = re.search(
+            r'<div class="event_name"[^>]*>(.*?)</div>',
+            part,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        event_type = _strip_html(name_match.group(1)) if name_match else ""
+
+        document_url, link_title = _parse_content_link(part)
+        if not event_type and link_title:
+            event_type = link_title
+        if not event_type:
             continue
+
+        timestamp_match = re.search(
+            r'<div class="timestamp"[^>]*>(.*?)</div>',
+            part,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        event_date = _strip_html(timestamp_match.group(1)) if timestamp_match else ""
+        if not event_date:
+            continue
+
+        date_label = ""
+        right_col = re.search(
+            r'<div class="right_col"[^>]*>(.*)',
+            part,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if right_col:
+            label_match = re.search(
+                r'<div class="sub-title"[^>]*>(.*?)</div>',
+                right_col.group(1),
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+            if label_match:
+                date_label = _strip_html(label_match.group(1))
+
+        details = ""
+        for subtitle in re.findall(
+            r'<div class="sub-title"[^>]*>(.*?)</div>',
+            part,
+            flags=re.DOTALL | re.IGNORECASE,
+        ):
+            text = _strip_html(subtitle)
+            if not text:
+                continue
+            if text.lower() in _DATE_LABELS:
+                continue
+            if link_title and text.lower() == link_title.lower():
+                continue
+            details = text
+            break
 
         content_hash = corporate_action_hash(ticker, event_type, event_date)
         if content_hash in seen:
@@ -192,6 +264,9 @@ def _parse_corporate_actions(html: str, *, ticker: str) -> list[CorporateActionI
                 event_type=event_type,
                 event_date=event_date,
                 content_hash=content_hash,
+                details=details,
+                date_label=date_label,
+                document_url=document_url,
             )
         )
 
