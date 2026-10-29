@@ -1,0 +1,5 @@
+{
+  "name": "india-market-news",
+  "install": "pip install -e .",
+  "start": "echo 'India market news environment ready'"
+}

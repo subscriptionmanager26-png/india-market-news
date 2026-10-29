@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 india-market-news = "india_market_news.cli:main"
+india-market-news-summarize = "india_market_news.summarize_cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

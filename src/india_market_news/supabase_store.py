@@ -78,8 +78,10 @@ class SupabaseStore:
 
     @classmethod
     def from_env(cls) -> SupabaseStore:
-        url = os.environ["SUPABASE_URL"]
-        key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+        url = os.environ.get("SUPABASE_URL", "https://imrcllmpldvjoyjyluhr.supabase.co")
+        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("service_role")
+        if not key:
+            raise KeyError("SUPABASE_SERVICE_ROLE_KEY or service_role must be set")
         return cls(create_client(url, key))
 
     def start_fetch_run(self, run_type: str) -> str:

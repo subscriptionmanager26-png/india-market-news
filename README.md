@@ -41,6 +41,13 @@ Your UI (read via Supabase client)
 | `mn_corporate_actions` | Dividends, results, bonus, etc. |
 | `mn_tickers` | NSE symbol reference from `EQUITY_L.csv` |
 | `mn_fetch_runs` | Job history and stats |
+| `mn_news_ai_summaries` | AI bullet summaries for PocketEdge (written by Cursor Cloud Agent) |
+
+### AI summaries (Cursor Cloud Agent)
+
+TradingView (and other) ingest still fills **`mn_news_items`**. **Cursor Cloud Agents** replace the old Edge `summarize-news` OpenAI/Mistral step: scheduled automations run `india-market-news-summarize` to upsert **`mn_news_ai_summaries`**.
+
+Setup: [docs/cloud-agent-summarization.md](docs/cloud-agent-summarization.md)
 
 ### UI views
 
