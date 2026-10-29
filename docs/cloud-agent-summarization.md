@@ -1,5 +1,41 @@
 # Cloud Agent summarisation (replaces Edge `summarize-news` LLM)
 
+## Relationship to **Pocketedge news desk brief** (Pramaan)
+
+You already run a **separate** automation (often named *Pocketedge news desk brief*) on the **Pramaan** repo. That agent:
+
+- Runs every **6 hours** (`0 */6 * * *` UTC)
+- **Reads** `mn_news_items` **and** `mn_news_ai_summaries` (plus `af_*` Twitter/Substack) as **inspiration**
+- **Writes** 0–5 **desk notes** to `src/lib/desk-notes.ts` and pushes **`main`** for https://pramaan.pocketedge.in/news
+
+It does **not** backfill **`mn_news_ai_summaries`** for the full market-news firehose (~hundreds of tickers/day) or PocketEdge’s `ingest-news-summary` webhook on INSERT.
+
+| | **Summarize automation** (this repo) | **News desk brief** (Pramaan) |
+|--|--------------------------------------|--------------------------------|
+| Repo | `india-market-news` | Pramaan (Next.js) |
+| Output | Rows in **`mn_news_ai_summaries`** | **`/news`** desk notes + heroes |
+| Volume | ~**40–80 stories/run**, several runs/day | **0–5** notes / 6h |
+| Schedule | e.g. 4× weekday (keep **ahead of** desk) | `0 */6 * * *` UTC |
+
+**Do not fold bulk summarisation into the desk prompt** — one run cannot reliably produce hundreds of per-ticker bullets *and* ship curated desk notes.
+
+**Do reuse the same Supabase secrets** on both Cloud environments (`SUPABASE_URL` + service role for project `imrcllmpldvjoyjyluhr`).
+
+**Optional desk tweak:** if a headline has no AI row yet, the desk can still use `mn_news_items.summary`; once this automation catches up, prefer **`ai_bullets`** from `mn_news_ai_summaries` for grounding.
+
+---
+
+## Quick checklist (you)
+
+1. **Merge** the PR that adds `india-market-news-summarize` (this repo).
+2. **Cursor → Cloud Agents → Environments** → link `india-market-news` → add runtime secrets (section 1 below).
+3. **Trigger an environment build** (or wait for the next agent run) so `pip install -e .` from `.cursor/environment.json` succeeds.
+4. **Cursor → Automations → New** → repo + environment → schedule → paste prompt from [`.cursor/automation/summarize-news-agent.md`](../.cursor/automation/summarize-news-agent.md).
+5. **Disable** legacy Edge `summarize-news` LLM schedule in Supabase.
+6. **Run automation once manually**; confirm new rows in `mn_news_ai_summaries` with `model` = `cursor:composer-2.5`.
+
+---
+
 TradingView ingest still writes **`mn_news_items`**. This workflow uses a **Cursor Cloud Agent** (Composer) to write **`mn_news_ai_summaries`**, which PocketEdge already reads.
 
 Disable or ignore the Supabase Edge Function **`summarize-news`** LLM path (OpenAI/Mistral keys are exhausted). Ingest + PocketEdge `ingest-news-summary` on INSERT are unchanged.
